@@ -1,0 +1,11 @@
+<launch>
+  <arg name="play_bag" default="true" />
+  <arg name="bag_file" default="/home/bindeer/git/dataset/MH_01_easy.bag"/>
+  <arg name="config_path" default = "$(find vpi_tracker)/config/euroc_config.yaml" />
+
+  <node name="vpi_tracker" pkg="vpi_tracker" type="vpi_tracker_node" output="screen">
+    <param name="config_file" type="string" value="$(arg config_path)" />
+  </node>
+
+  <node name="bag" pkg="rosbag" type="play" output="log" args="--delay 1 $(arg bag_file)" if="$(arg play_bag)"></node>
+</launch>
