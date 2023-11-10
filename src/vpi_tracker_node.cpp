@@ -3,7 +3,9 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud.h>
 #include <std_msgs/Bool.h>
+
 #include <string>
+
 #include "vpi_tracker/utils.h"
 #include "vpi_tracker/vpi_tracker.h"
 
@@ -23,7 +25,7 @@ class VpiTrackerNode {
   }
 
  private:
-  void imgCallback(const sensor_msgs::Image::ConstPtr &img_msg) {
+  void imgCallback(const sensor_msgs::Image::ConstPtr& img_msg) {
     if (first_image_flag_) {
       first_image_flag_ = false;
       first_image_time_ = img_msg->header.stamp.toSec();
@@ -95,10 +97,10 @@ class VpiTrackerNode {
       feature_points->header = img_msg->header;
       feature_points->header.frame_id = "world";
 
-      vector<cv::Point2f> &pts_velocity = tracker_.pts_velocity;
-      vector<cv::Point2f> &un_pts = tracker_.cur_un_pts;
-      vector<cv::Point2f> &cur_pts = tracker_.cur_pts;
-      vector<int> &ids = tracker_.ids;
+      vector<cv::Point2f>& pts_velocity = tracker_.pts_velocity;
+      vector<cv::Point2f>& un_pts = tracker_.cur_un_pts;
+      vector<cv::Point2f>& cur_pts = tracker_.cur_pts;
+      vector<int>& ids = tracker_.ids;
 
       for (int i = 0; i < ids.size(); ++i) {
         if (tracker_.track_cnt[i] > 1) {
@@ -140,8 +142,8 @@ class VpiTrackerNode {
           cv::circle(tmp_img, tracker_.cur_pts[i], 2,
                      cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
         }
-        // cv::imshow("show track", tmp_img);
-        // cv::waitKey(1);
+        cv::imshow("show track", tmp_img);
+        cv::waitKey(1);
         pub_match_.publish(ptr->toImageMsg());
       }
     }
@@ -161,7 +163,7 @@ class VpiTrackerNode {
   int pub_count_ = 1;
 };
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "vpi_tracker");
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
                                  ros::console::levels::Debug);

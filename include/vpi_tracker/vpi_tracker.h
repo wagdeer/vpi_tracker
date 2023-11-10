@@ -1,11 +1,20 @@
 #pragma once
 
 #include <cv_bridge/cv_bridge.h>
-#include <map>
+
 #include <bitset>
+#include <map>
 #include <numeric>
+#include <opencv2/core.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/core/utility.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/video/tracking.hpp>
+
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudaoptflow.hpp>
+
 #include "camodocal/camera_models/CameraFactory.h"
 #include "camodocal/camera_models/CataCamera.h"
 #include "camodocal/camera_models/PinholeCamera.h"
@@ -43,9 +52,10 @@ class VpiTracker {
   void setParams(Params &params);
   void setCameraIntrinsic(const std::string &config);
   void initVpiOpticalFlow();
-  void initVpiOrb();
+
   void initVpiFast();
   void initVpiEqualize();
+  void initOpencvCuda();
   bool updateID(unsigned int i);
   void readImage(cv_bridge::CvImageConstPtr &ptr);
   void processByVpiOptiflow(cv_bridge::CvImageConstPtr &ptr);
@@ -55,17 +65,15 @@ class VpiTracker {
   bool pub_this_frame_;
 
  private:
-  std::vector<cv::Point2f> sortKeypoints(VPIArray keypoints, VPIArray scores,
-                                         cv::Mat &mask, int max);
-  std::vector<cv::Point2f> sortKeypoints(VPIArray keypoints, int max,
-                                         cv::Mat &mask, cv::Mat &debug_img);
-  void convertData(std::vector<bool> &track_status,
-                   std::vector<cv::Point2f> &forw_pts, VPIArray curFeatures);
   bool inBorder(const cv::Point2f &pt);
   void addPoints();
   template <typename T1, typename T2>
   void reduceVector(std::vector<T1> &v, const std::vector<T2> &s);
   void rejectWithF();
+  void selectPtsByMask(std::vector<cv::Point2f> &spts,
+                       std::vector<cv::Point2f> &dpts, cv::Mat &mask, int max);
+  void selectPtsByMask(std::vector<cv::Point2f> &spts, VPIArray keypoints,
+                       int max, cv::Mat &mask);
   void undistortedPoints();
 
   Params *params_;
@@ -102,6 +110,13 @@ class VpiTracker {
   VPIOpticalFlowPyrLKParams lkParams_;
   VPIFASTCornerDetectorParams fastParams_;
   VPIORBParams orb_params_;
+
+  // opencv cuda
+  cv::Ptr<cv::cuda::CornersDetector> detector_;
+  cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> pyrLK_gpu_sparse_;
+  cv::cuda::GpuMat prev_gpu_img_, cur_gpu_img_, forw_gpu_img_;
+  cv::cuda::GpuMat gpu_status_, n_gpu_pts;
+  cv::cuda::GpuMat cur_gpu_pts_, forw_gpu_pts_;
 
   camodocal::CameraPtr camera_;
 
