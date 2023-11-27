@@ -22,67 +22,6 @@ constexpr int MAX_KEYPOINTS = 180;
 
 int VpiTracker::n_id = 0;
 
-static void download(const cv::cuda::GpuMat& d_mat, vector<cv::Point2f>& vec) {
-  vec.resize(d_mat.cols);
-  cv::Mat mat(1, d_mat.cols, CV_32FC2, (void*)&vec[0]);
-  d_mat.download(mat);
-}
-
-static void download(const cv::cuda::GpuMat& d_mat, vector<uchar>& vec) {
-  vec.resize(d_mat.cols);
-  cv::Mat mat(1, d_mat.cols, CV_8UC1, (void*)&vec[0]);
-  d_mat.download(mat);
-}
-
-static void download(VPIArray src, vector<cv::Point2f>& dst) {
-  VPIArrayData srcData;
-  vpiArrayLockData(src, VPI_LOCK_READ, VPI_ARRAY_BUFFER_HOST_AOS, &srcData);
-  const VPIArrayBufferAOS& aosSrcData = srcData.buffer.aos;
-  const VPIKeypointF32* pKpt = (VPIKeypointF32*)aosSrcData.data;
-  int len = *srcData.buffer.aos.sizePointer;
-
-  dst.resize(len);
-  for (int i = 0; i < len; ++i) {
-    dst[i].x = pKpt[i].x;
-    dst[i].y = pKpt[i].y;
-  }
-  vpiArrayUnlock(src);
-}
-
-static void download(VPIArray src, vector<uchar>& dst) {
-  VPIArrayData srcData;
-  vpiArrayLockData(src, VPI_LOCK_READ, VPI_ARRAY_BUFFER_HOST_AOS, &srcData);
-  const VPIArrayBufferAOS& aosSrcData = srcData.buffer.aos;
-  const uint8_t* pSts = (uint8_t*)aosSrcData.data;
-  int len = *srcData.buffer.aos.sizePointer;
-
-  dst.resize(len);
-  for (int i = 0; i < len; ++i) {
-    dst[i] = !pSts[i];
-  }
-  vpiArrayUnlock(src);
-}
-
-static void upload(cv::cuda::GpuMat& s_mat, vector<cv::Point2f>& vec) {
-  cv::Mat mat(vec);
-  s_mat.upload(mat);
-}
-
-static void upload(VPIArray curFeatures, vector<cv::Point2f>& vec) {
-  VPIArrayData ptsData;
-  vpiArrayLockData(curFeatures, VPI_LOCK_READ_WRITE, VPI_ARRAY_BUFFER_HOST_AOS,
-                   &ptsData);
-  VPIArrayBufferAOS& aosKeypoints = ptsData.buffer.aos;
-  VPIKeypointF32* kptData =
-      reinterpret_cast<VPIKeypointF32*>(aosKeypoints.data);
-  for (int i = 0; i < vec.size(); ++i) {
-    kptData[i].x = vec[i].x;
-    kptData[i].y = vec[i].y;
-  }
-  *aosKeypoints.sizePointer = vec.size();
-  vpiArrayUnlock(curFeatures);
-}
-
 void VpiTracker::selectPtsByMask(vector<cv::Point2f>& spts,
                                  vector<cv::Point2f>& dpts, cv::Mat& mask,
                                  int max) {
@@ -299,32 +238,27 @@ void VpiTracker::setCameraIntrinsic(const std::string& config) {
 }
 
 void VpiTracker::initVpiEqualize() {
-  vpiStreamCreate(0, &equalize_stream_);
-  vpiImageCreate(params_->col, params_->row, VPI_IMAGE_FORMAT_U8, 0,
-                 &imgEqualize_);
   vpiCreateEqualizeHist(VPI_BACKEND_CUDA, VPI_IMAGE_FORMAT_U8, &equalize_);
 }
 
 void VpiTracker::initOpencvCuda() {
   detector_ = cv::cuda::createGoodFeaturesToTrackDetector(
-      CV_8UC1, MAX_KEYPOINTS, 0.01, params_->min_dist);
+      CV_8UC1, MAX_KEYPOINTS, 0.005, params_->min_dist);
   pyrLK_gpu_sparse_ =
       cv::cuda::SparsePyrLKOpticalFlow::create(cv::Size(21, 21), 3);
   pyrLK_gpu_sparse_->setUseInitialFlow(false);
+  clahe_ = cv::cuda::createCLAHE(60, cv::Size(3, 3));
 }
 
 void VpiTracker::initVpiOpticalFlow() {
-  vpiContextCreate(0, &ctx_);
-  vpiContextSetCurrent(ctx_);
-  vpiEventCreate(0, &barrier_harris_);
   // Create the stream where processing will happen.
   CHECK_STATUS(vpiStreamCreate(0, &lk_stream_));
   CHECK_STATUS(vpiStreamCreate(0, &harris_stream_));
   // Create grayscale image representation of input.
   CHECK_STATUS(vpiImageCreate(params_->col, params_->row, VPI_IMAGE_FORMAT_U8,
-                              0, &imgGrayscale_));
+                              0, &imgFrame_));
   CHECK_STATUS(vpiImageCreate(params_->col, params_->row, VPI_IMAGE_FORMAT_U8,
-                              0, &imgGrayscale2_));
+                              0, &imgGrayscale_));
   // Create the image pyramids used by the algorithm
   CHECK_STATUS(vpiPyramidCreate(params_->col, params_->row, VPI_IMAGE_FORMAT_U8,
                                 params_->pyrlevel, 0.5, 0, &pyrPrevFrame_));
@@ -333,15 +267,6 @@ void VpiTracker::initVpiOpticalFlow() {
   // Create input and output arrays
   CHECK_STATUS(vpiArrayCreate(MAX_HARRIS_CORNERS, VPI_ARRAY_TYPE_KEYPOINT_F32,
                               0, &prevFeatures_));
-  // CHECK_STATUS(vpiArrayCreate(MAX_HARRIS_CORNERS,
-  // VPI_ARRAY_TYPE_KEYPOINT_F32,
-  //                            0, &curFeatures_));
-  // CHECK_STATUS(
-  //    vpiArrayCreate(MAX_HARRIS_CORNERS, VPI_ARRAY_TYPE_U8, 0, &status_));
-  // CHECK_STATUS(
-  //   vpiArrayCreate(MAX_HARRIS_CORNERS, VPI_ARRAY_TYPE_U32, 0, &scores_));
-  // Parameters we'll use. No need to change them on the fly, so just define
-  // them here. We're using the default parameters.
   CHECK_STATUS(vpiInitOpticalFlowPyrLKParams(&lkParams_));
   lkParams_.useInitialFlow = 0;
 
@@ -359,7 +284,7 @@ void VpiTracker::initVpiOpticalFlow() {
   vpiInitFASTCornerDetectorParams(&fastParams_);
   fastParams_.circleRadius = 3;
   fastParams_.arcLength = 9;
-  fastParams_.intensityThreshold = 100;
+  fastParams_.intensityThreshold = 90;
   fastParams_.nonMaxSuppression = 1;
 }
 
@@ -408,6 +333,7 @@ void VpiTracker::processByVpiOptiflow(cv_bridge::CvImageConstPtr& ptr) {
   if (params_->equalize) {
     vpiSubmitEqualizeHist(lk_stream_, VPI_BACKEND_CUDA, equalize_,
                           imgGrayscale_, imgFrame_);
+    
   } else {
     imgFrame_ = imgGrayscale_;
   }
@@ -559,6 +485,9 @@ void VpiTracker::processByVpiFast(cv_bridge::CvImageConstPtr& ptr) {
 
 void VpiTracker::processByOpencv(cv_bridge::CvImageConstPtr& ptr) {
   forw_gpu_img_.upload(ptr->image);
+  if (equalize_) {
+    clahe_->apply(forw_gpu_img_, forw_gpu_img_);
+  }
   forw_pts.clear();
   if (cur_pts.size() > 0) {
     vector<uchar> status;
