@@ -51,12 +51,19 @@ class VpiTracker
 public:
     VpiTracker();
 
-    void setParams(Params &params);
-
     bool updateID(unsigned int i);
+    void setParams(Params &params);
     void readImage(cv_bridge::CvImageConstPtr &ptr);
 
-    bool pub_this_frame_;
+    std::vector<cv::Point2f> n_pts;
+    std::vector<cv::Point2f> pts_velocity;
+    std::vector<cv::Point2f> prev_pts, cur_pts, forw_pts;
+    std::vector<cv::Point2f> prev_un_pts, cur_un_pts;
+    std::vector<int> ids;
+    std::vector<int> track_cnt;
+    
+    bool pub_this_frame;
+    static int n_id;
 
 private:
     void setMask(cv::Mat &mask);
@@ -105,14 +112,4 @@ private:
     std::map<int, cv::Point2f> cur_un_pts_map, prev_un_pts_map;
     cv::Mat prev_img_, cur_img_, forw_img_;
     double cur_time, prev_time;
-
-public:
-    std::vector<cv::Point2f> n_pts;
-    std::vector<cv::Point2f> pts_velocity;
-    std::vector<cv::Point2f> prev_pts, cur_pts, forw_pts;
-    std::vector<cv::Point2f> prev_un_pts, cur_un_pts;
-    std::vector<int> ids;
-    std::vector<int> track_cnt;
-
-    static int n_id;
 };
