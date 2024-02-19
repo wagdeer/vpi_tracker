@@ -57,7 +57,7 @@ private:
                   (img_msg->header.stamp.toSec() - first_image_time_)) <=
             params_.freq)
         {
-            tracker_.pub_this_frame_ = true;
+            tracker_.pub_this_frame = true;
             // reset the frequency control
             if (abs(1.0 * pub_count_ /
                         (img_msg->header.stamp.toSec() - first_image_time_) -
@@ -69,7 +69,7 @@ private:
         }
         else
         {
-            tracker_.pub_this_frame_ = false;
+            tracker_.pub_this_frame = false;
         }
 
         cv_bridge::CvImageConstPtr ptr;
@@ -98,7 +98,7 @@ private:
             }
         }
 
-        if (tracker_.pub_this_frame_)
+        if (tracker_.pub_this_frame)
         {
             pub_count_++;
             sensor_msgs::PointCloudPtr feature_points(new sensor_msgs::PointCloud);

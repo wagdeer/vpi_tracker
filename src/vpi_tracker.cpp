@@ -461,7 +461,7 @@ void VpiTracker::processByVpiFast(cv_bridge::CvImageConstPtr& ptr) {
     n++;
   }
 
-  if (pub_this_frame_) {
+  if (pub_this_frame) {
     cv::Mat mask;
     rejectWithF();
     setMask(mask);
